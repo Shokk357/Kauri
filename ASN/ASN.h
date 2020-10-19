@@ -4,80 +4,63 @@
 #include <iostream>
 #include <cstring>
 #include <vector>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
+#include <ace/SOCK_Connector.h>
 
 template<typename T>
 struct ASN {
-    uint8_t *encode(T &a);
+    uint8_t *encode(T &message);
 
-    T decode(uint8_t *a);
+    T decode(uint8_t *message);
 };
 
 template<typename T>
 struct ASN<std::vector<T>> {
-    void snd(std::vector<uint8_t> &msg) {
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        sockaddr_in newAddr;
-        newAddr.sin_family = AF_INET;
-        newAddr.sin_port = htons(1234);
-        newAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        int optval = 1;
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-        int res = connect(sock, (struct sockaddr *) &newAddr, sizeof(newAddr));
-        if (res == -1) {
-            std::cout << "Connection failed!" << std::endl;
-        } else {
-            int packLen = msg.size();
-            send(sock, &packLen, 4, MSG_NOSIGNAL);
-            send(sock, msg.data(), packLen, MSG_NOSIGNAL);
-        }
-        shutdown(sock, SHUT_WR);
-        close(sock);
-    }
-
-    void encode(int start, int &initial, int len, std::vector<uint8_t> &packet) {
-        while (initial > 0) {
-            if (len >= 256) {
-                len = len >> 8;
-                start++;
+    void encode(int powVal, int &startVal, int initialSize, std::vector<uint8_t> &packet) {
+        while (startVal > 0) {
+            if (initialSize >= 256) {
+                initialSize = initialSize >> 8;
+                powVal++;
             } else {
-                packet.insert(packet.end(), reinterpret_cast<uint8_t *>(&len), reinterpret_cast<uint8_t *>(&len) + 4);
-                len = initial - (len << (8 * start));
-                start = 0;
-                initial = len;
+                uint8_t curBlock = initialSize;
+                packet.insert(packet.end(), reinterpret_cast<uint8_t *>(&curBlock), reinterpret_cast<uint8_t *>(&curBlock) + 1);
+                initialSize = startVal - (initialSize << (8 * powVal));
+                powVal = 0;
+                startVal = initialSize;
             }
         }
     }
 
-    void handle(std::vector<T> &a, std::vector<uint8_t> &packet) {
-        int size = a.size() * sizeof(T), bytesAmount = 0;
+    void handle(std::vector<T> &message, std::vector<uint8_t> &packet) {
+        int size = message.size() * sizeof(T);
+        uint8_t LengthBlock = size;
         bool isLongForm = false;
         if (size < 128) {
-            packet.insert(packet.begin(), reinterpret_cast<uint8_t *>(&size), reinterpret_cast<uint8_t *>(&size) + 4);
+            packet.insert(packet.begin(), reinterpret_cast<uint8_t *>(&LengthBlock), reinterpret_cast<uint8_t *>(&LengthBlock) +
+                    sizeof(uint8_t));
         } else {
             encode(0, size, size, packet);
-            bytesAmount = packet.size() / 4;
+            LengthBlock = packet.size();
             isLongForm = true;
         }
-        packet.insert(packet.end(), reinterpret_cast<uint8_t *>(a.data()),reinterpret_cast<uint8_t *>(a.data() + a.size()));
+        packet.insert(packet.end(), reinterpret_cast<uint8_t *>(message.data()),
+                      reinterpret_cast<uint8_t *>(message.data() + message.size()));
         if (isLongForm) {
-            bytesAmount += 128;
-            packet.insert(packet.begin(), reinterpret_cast<uint8_t *>(&bytesAmount),
-                          reinterpret_cast<uint8_t *>(&bytesAmount) + 4);
+            LengthBlock += 128;
+            packet.insert(packet.begin(), reinterpret_cast<uint8_t *>(&LengthBlock),
+                          reinterpret_cast<uint8_t *>(&LengthBlock) + sizeof(uint8_t));
         }
     }
 
-    std::vector<T> decode(uint8_t *a) {
-        int firstByte, blockAmount, messageLength = 0;
-        memcpy(&firstByte, a, sizeof(int));
+    std::vector<T> decode(uint8_t *message) {
+        uint8_t firstByte;
+        int blockAmount, messageLength = 0;
+        memcpy(&firstByte, message, sizeof(uint8_t));
         if (firstByte > 127) {
             blockAmount = firstByte - 128;
             int power = firstByte - 129;
             for (int i = 0; i < blockAmount; i++) {
-                int arg;
-                memcpy(&arg, a + sizeof(int) * (i + 1), sizeof(int));
+                uint8_t arg;
+                memcpy(&arg, message + sizeof(uint8_t) * (i + 1), sizeof(uint8_t));
                 messageLength += arg << (8 * power);
                 power--;
             }
@@ -86,23 +69,23 @@ struct ASN<std::vector<T>> {
             messageLength = firstByte;
         }
         std::vector<T> val(messageLength / sizeof(T));
-        memcpy(val.data(), a + sizeof(int) * (blockAmount + 1), messageLength);
+        memcpy(val.data(), message + sizeof(uint8_t) * (blockAmount + 1), messageLength);
         return val;
     }
 };
 
 template<>
 struct ASN<int> {
-    uint8_t *encode(int &a);
+    uint8_t *encode(int &message);
 
-    int decode(uint8_t *a);
+    int decode(uint8_t *message);
 };
 
 template<>
 struct ASN<std::string> {
-    uint8_t *encode(std::string &a);
+    uint8_t *encode(std::string &message);
 
-    std::string decode(uint8_t *a);
+    std::string decode(uint8_t *message);
 };
 
 #endif //KAURI_ASN_H
