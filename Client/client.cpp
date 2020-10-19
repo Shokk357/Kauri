@@ -1,19 +1,13 @@
 #include <iostream>
 #include "../ASN/ASN.h"
-#include "client.h"
 
 int main() {
-    ASN<std::vector<int>> intTest;
-    int size = 15;
-    std::vector<int> vals;
-    std::vector<uint8_t> encodedMessage;
-    for (int i = 0; i < size; i++) {
-        vals.push_back(i);
-    }
-    intTest.handle(vals, encodedMessage);
-    client client;
-    std::string addr = "127.0.0.1";
-    client.bindToServer(1234, addr);
-    client.sendMessage(encodedMessage);
+    ASN<std::vector<int>> a;
+    std::vector<int> b = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+    std::vector<uint8_t> c;
+    a.handle(b, c);
+//   auto elen = a.decode(c.data());
+    a.snd(c);
+
     return 0;
 }
